@@ -19,7 +19,8 @@ So I created one.
 ## Extra notes
 - This application was created during a weekend so do not expect any coding or best practices. It is just a simple personal utility I created for my personal use, but I think it could be useful for others also so here it is.
 - Send PRs or comments to help improve it! Share it with your friends!
-- If you just need the compiled binary .exe for windows [here it is](https://file.io/0iJbYAmF3QU0) 
+- If you just need the compiled binary .exe for windows [here it is](https://file.io/0iJbYAmF3QU0)
+- The name "maitenotas" is the union of [Maiten tree of Argentina](https://en.wikipedia.org/wiki/Maytenus_boaria) and "notas" (notes in spanish). Basically: "notes in a tree".
 
 ## License
 GPL. It is free, open source, if you use any of this code keep your project also open source and keep all references to sources.
