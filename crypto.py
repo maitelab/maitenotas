@@ -1,4 +1,4 @@
-""" 
+"""
 Application: Maitenotas
 Made by Taksan Tong
 https://github.com/maitelab/maitenotas
@@ -10,9 +10,10 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.fernet import Fernet
 
-def generateUserKey(userPassword):
-    password_provided_bytes = bytes(userPassword, 'utf-8')
-    password = userPassword.encode() # Convert to type bytes
+def generate_user_key(user_password: str) -> Fernet:
+    """Create a key for encryption purposes"""
+    password_provided_bytes = bytes(user_password, 'utf-8')
+    password = user_password.encode() # Convert to type bytes
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -21,15 +22,17 @@ def generateUserKey(userPassword):
         backend=default_backend()
     )
     key = base64.urlsafe_b64encode(kdf.derive(password)) # Can only use kdf once
-    fernetKey = Fernet(key)
-    return fernetKey
+    fernet_key = Fernet(key)
+    return fernet_key
 
-def encryptTextToData(inputText, userKey):
-    messageData = inputText.encode(encoding='UTF-8')
-    encryptedData = userKey.encrypt(messageData)
-    return encryptedData
+def encrypt_text_to_data(input_text: str, user_key: Fernet) -> bytes:
+    """Encrypt text"""
+    message_data = input_text.encode(encoding='UTF-8')
+    encrypted_data = user_key.encrypt(message_data)
+    return encrypted_data
 
-def decryptDataToText(inputData, userKey):
-    decryptedData = userKey.decrypt(inputData)
-    clearText = decryptedData.decode(encoding='UTF-8')
-    return clearText
+def decrypt_data_to_text(input_data: bytes, user_key: Fernet) -> str:
+    """Decrypt data to clear text"""
+    decrypted_data = user_key.decrypt(input_data)
+    clear_text = decrypted_data.decode(encoding='UTF-8')
+    return clear_text

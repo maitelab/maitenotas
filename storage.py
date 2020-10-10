@@ -1,24 +1,22 @@
-""" 
+"""
 Application: Maitenotas
 Made by Taksan Tong
 https://github.com/maitelab/maitenotas
 
 Functions related to read/write data """
-import sys
-
 import sqlite3
-from sqlite3 import Error
-
-from crypto import encryptTextToData
-from crypto import decryptDataToText
+from typing import Optional
+from cryptography.fernet import Fernet
+from crypto import encrypt_text_to_data, decrypt_data_to_text
+import text_labels
 
 # ***************** SQL
-SQL_CREATE_BOOK_TABLE = """ 
+SQL_CREATE_BOOK_TABLE = """
 CREATE TABLE IF NOT EXISTS book (
     id integer PRIMARY KEY AUTOINCREMENT,
     book_name blob NOT NULL
 ); """
-                                    
+
 SQL_CREATE_JOURNAL_TABLE = """
 CREATE TABLE IF NOT EXISTS journal (
     book_id integer,
@@ -27,7 +25,7 @@ CREATE TABLE IF NOT EXISTS journal (
     journal_name blob NOT NULL,
     journal_text blob NOT NULL
 ); """
-                                        
+
 SQL_INSERT_BOOK = """
 INSERT INTO book(book_name)
 VALUES(?)"""
@@ -55,321 +53,243 @@ from journal
 where id=?
 """
 
+SQL_UPDATE_JOURNAL_TEXT = """
+update journal
+set journal_text=?
+where id=?
+"""
+
 # ****************** DATABASE NAME and main operations
 DATABASE_NAME = r"maitenotas.data"
 
-def create_connection(db_file):
+def create_connection(dbfile) -> Optional[sqlite3.Connection]:
     """ create a database connection to the SQLite database
-        specified by db_file
-    :param db_file: database file
+        specified by dbfile
+    :param dbfile: database file
     :return: Connection object or None
     """
     conn = None
     try:
-        conn = sqlite3.connect(db_file)
+        conn = sqlite3.connect(dbfile)
         return conn
-    except Error as e:
-        print(e)
-
+    except Exception as exception:
+        print(str(exception))
     return conn
 
-def create_table(conn, create_table_sql):
-    """ create a table from the create_table_sql statement
-    :param conn: Connection object
-    :param create_table_sql: a CREATE TABLE statement
-    :return:
-    """
+def create_table(conn: sqlite3.Connection, create_tablesql: str) -> None:
+    """ create a table from the create_tablesql statement"""
     try:
-        c = conn.cursor()
-        c.execute(create_table_sql)
-    except Error as e:
-        print(e)
+        cursor = conn.cursor()
+        cursor.execute(create_tablesql)
+    except Exception as exception:
+        print(str(exception))
 
 # **************** entity operations
-def updateJournalText(userKey, journalId, newJournalText):
-    SQL_UPDATE_JOURNAL_TEXT = """
-    update journal
-    set journal_text=?
-    where id=?
-    """
+def update_journal_text(user_key: Fernet, journal_id: int, new_journal_text: str) -> None:
+    """update journal table"""
     try:
         conn = create_connection(DATABASE_NAME)
-    
         if conn is not None:
             cur = conn.cursor()
-            
-            encryptedData = encryptTextToData(newJournalText, userKey)
-            
-            dataForSQL=(encryptedData, journalId,)
-            cur.execute(SQL_UPDATE_JOURNAL_TEXT, dataForSQL)
-            
+            encrypted_data = encrypt_text_to_data(new_journal_text, user_key)
+            datas=(encrypted_data, journal_id,)
+            cur.execute(SQL_UPDATE_JOURNAL_TEXT, datas)
             conn.commit()
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+    except Exception as exception:
+        print(str(exception))
     finally:
         if conn:
             conn.close()
-            
-def updateJournalName(userKey, journalId, newJournalName):
-    SQL_UPDATE_JOURNAL_NAME = """
+
+def update_journal_name(user_key: Fernet, journal_id: int, new_journal_name: str) -> None:
+    """update journal name"""
+    sql = """
     update journal
     set journal_name=?
     where id=?
     """
     try:
         conn = create_connection(DATABASE_NAME)
-    
         if conn is not None:
             cur = conn.cursor()
-            
-            encryptedData = encryptTextToData(newJournalName, userKey)
-            
-            dataForSQL=(encryptedData, journalId)
-            cur.execute(SQL_UPDATE_JOURNAL_NAME, dataForSQL)
-            
+            encrypted_data = encrypt_text_to_data(new_journal_name, user_key)
+            data_forsql=(encrypted_data, journal_id)
+            cur.execute(sql, data_forsql)
             conn.commit()
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
-    finally:
-        if conn:
-            conn.close()
-            
-def deleteJournal(journalId):
-    SQL_DELETE_JOURNAL = """
-    delete from journal
-    where id=?
-    """
-    try:
-        conn = create_connection(DATABASE_NAME)
-    
-        if conn is not None:
-            cur = conn.cursor()
-            
-            print ("about to execute sql")
-            cur.execute(SQL_DELETE_JOURNAL, (journalId,))
-            print ("sql executed")
-            conn.commit()
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+    except Exception as exception:
+        print(str(exception))
     finally:
         if conn:
             conn.close()
 
-def getBookName(userKey, bookId):
-    """
-    SQL_READ_BOOK_NAME =  
-    select book_name
-    from book
-    where id=?
-    """
-    # read book name, it will become the tree name in the user interface
-    bookName = "Arbol"
-    
+def delete_journal(journal_id: int) -> None:
+    """delete journal"""
     try:
         conn = create_connection(DATABASE_NAME)
-    
         if conn is not None:
             cur = conn.cursor()
-            
-            cur.execute(SQL_READ_BOOK_NAME, (bookId,))
+            cur.execute("delete from journal where id=?", (journal_id,))
+            conn.commit()
+    except Exception as exception:
+        print(str(exception))
+    finally:
+        if conn:
+            conn.close()
+
+def get_book_name(user_key: Fernet, book_id: int) -> str:
+    """read book name, it will become the tree name in the user interface"""
+    book_name = text_labels.BOOK_NAME
+    try:
+        conn = create_connection(DATABASE_NAME)
+        if conn is not None:
+            cur = conn.cursor()
+            cur.execute(SQL_READ_BOOK_NAME, (book_id,))
             record = cur.fetchall()
             for row in record:
                 # read columns
-                bookName = decryptDataToText(row[0], userKey)
-            
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+                book_name = decrypt_data_to_text(row[0], user_key)
+    except Exception as exception:
+        print(str(exception))
     finally:
         if conn:
             conn.close()
+    return book_name
 
-    return bookName
-
-def getJournalText(userKey, journalId):
-    """ SQL_READ_JOURNAL_TEXT =
-    select journal_text
-    from journal
-    where id=?
-    """
-    journalText = ""
-    
+def get_journal_text(user_key: Fernet, journal_id) -> str:
+    """get journal text"""
+    journal_text = ""
     try:
         conn = create_connection(DATABASE_NAME)
-    
         if conn is not None:
             cur = conn.cursor()
-            
-            cur.execute(SQL_READ_JOURNAL_TEXT, (journalId,))
+            cur.execute(SQL_READ_JOURNAL_TEXT, (journal_id,))
             record = cur.fetchall()
             for row in record:
                 # read columns
-                journalText = decryptDataToText(row[0], userKey)
-            
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+                journal_text = decrypt_data_to_text(row[0], user_key)
+    except Exception as exception:
+        print(str(exception))
     finally:
         if conn:
             conn.close()
+    return journal_text
 
-    return journalText
-
-def getTreeLeafs(userKey):
-    """
-    element1 = 0 , 1 , "leaf 1"
-    element2 = 0 , 2 , "leaf 2"
-    element1_1 = 1 , 3 , "leaf 1_1"
-    element2_1 = 2 , 4 , "leaf 2_1"
-    element2_2 = 2 , 5 , "leaf 2_2"
-    
-    elementList = element1, element2, element1_1, element2_1, element2_2
-    return elementList
-    
-    SQL_READ_ALL_JOURNAL
-    select parent_id,id,journal_name,journal_text 
-    from journal
-    where book_id=?
-    order by parent_id,id
-    
-    """
-    # read tree of book + journals from database
-    # for this first version the book id is always 2 (book id 1 is reserved)
-    leafList = []
-    
+def get_tree_leafs(user_key: Fernet) -> list:
+    """read tree of book + journals from database
+    for this first version the book id is always 2 (book id 1 is reserved)"""
+    leaf_list = []
     try:
         conn = create_connection(DATABASE_NAME)
-    
         if conn is not None:
             cur = conn.cursor()
-            
             cur.execute(SQL_READ_ALL_JOURNAL, (2,))
             record = cur.fetchall()
             for row in record:
                 # read columns
-                parentId=row[0]
-                id = row[1]
-                journalName = decryptDataToText(row[2], userKey)
-                leafElement = parentId, id, journalName
-                leafList.append(leafElement)
-            
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+                parent_id = row[0]
+                l_id = row[1]
+                journal_name = decrypt_data_to_text(row[2], user_key)
+                leaf_element = parent_id, l_id, journal_name
+                leaf_list.append(leaf_element)
+    except Exception as exception:
+        print(str(exception))
     finally:
         if conn:
             conn.close()
+    return leaf_list
 
-    return leafList 
-
-def createBook(userKey, bookName):
+def create_book(user_key: Fernet, book_name: str) -> int:
+    """create book"""
     try:
         conn = create_connection(DATABASE_NAME)
-    
         if conn is not None:
             cur = conn.cursor()
-            
-            encryptedData = encryptTextToData(bookName, userKey)
-            
-            dataTobeInserted=(encryptedData,)
-            cur.execute(SQL_INSERT_BOOK, dataTobeInserted)
-            
+            encrypted_data = encrypt_text_to_data(book_name, user_key)
+            data_tobe_inserted=(encrypted_data,)
+            cur.execute(SQL_INSERT_BOOK, data_tobe_inserted)
             conn.commit()
-            
-            lastRowId = cur.lastrowid
-            return lastRowId
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+            last_row_id = cur.lastrowid
+            return last_row_id
+    except Exception as exception:
+        print(str(exception))
     finally:
         if conn:
             conn.close()
-            
-def createJournal(userKey, bookId, parentLeafId, journalName, journalText):
+    return 0
+
+def create_journal(user_key: Fernet, book_id: int, parent_leaf_id: int,
+                  journal_name: str, journal_text: str) -> int:
+    """create journal"""
     try:
         conn = create_connection(DATABASE_NAME)
-    
         if conn is not None:
             cur = conn.cursor()
-            
-            encryptedDataJournalName = encryptTextToData(journalName, userKey)
-            encryptedDataJournalText = encryptTextToData(journalText, userKey)
-            
-            # INSERT INTO journal(book_id,parent_id,journal_name,journal_text)
-            dataTobeInserted=(bookId, parentLeafId, encryptedDataJournalName,encryptedDataJournalText,)
-            cur.execute(SQL_INSERT_JOURNAL, dataTobeInserted)
-            
+            encrypted_data_journal_name = encrypt_text_to_data(journal_name, user_key)
+            encrypted_data_journal_text = encrypt_text_to_data(journal_text, user_key)
+            data_tobe_inserted=(book_id, parent_leaf_id, encrypted_data_journal_name,
+                              encrypted_data_journal_text,)
+            cur.execute(SQL_INSERT_JOURNAL, data_tobe_inserted)
             conn.commit()
-            
-            lastRowId = cur.lastrowid
-            return lastRowId            
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+            last_row_id = cur.lastrowid
+            return last_row_id
+    except Exception as exception:
+        print(str(exception))
     finally:
         if conn:
             conn.close()
+    return 0
 
-def createDatabase(userKey, userPassword):
+def create_database(user_key: Fernet, user_password: str) -> bool:
+    """create databaase"""
     try:
         # create a database connection
         conn = create_connection(DATABASE_NAME)
-        
         # create tables
         if conn is not None:
             # create tables
             create_table(conn, SQL_CREATE_BOOK_TABLE)
             create_table(conn, SQL_CREATE_JOURNAL_TABLE)
-            
             # insert first book (this is a special book not for the user)
-            sqlInsertBook = """
-            INSERT INTO book(book_name)
-            VALUES(?)"""
             cur = conn.cursor()
-            
-            encryptedData = encryptTextToData(userPassword, userKey)
-            
-            dataTobeInserted=(encryptedData,)
-            cur.execute(SQL_INSERT_BOOK, dataTobeInserted)
-            
+            encrypted_data = encrypt_text_to_data(user_password, user_key)
+            data_tobe_inserted=(encrypted_data,)
+            cur.execute(SQL_INSERT_BOOK, data_tobe_inserted)
             conn.commit()
         else:
             return False
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+    except Exception as exception:
+        print(str(exception))
         return False
     finally:
         if conn:
             conn.close()
-            
     return True
-    
-def verifyDatabasePassword(userKey, userPassword):
+
+def verify_database_password(user_key: Fernet, user_password: str) -> bool:
+    """verify db pass"""
     try:
         # create a database connection
         conn = create_connection(DATABASE_NAME)
-    
-        sql_fetch_blob_query = """SELECT book_name from book where id = ?"""
-        
         # create tables
         if conn is not None:
             # read book name from the first record
             cur = conn.cursor()
-            cur.execute(sql_fetch_blob_query, (1,))
-            
+            cur.execute("SELECT book_name from book where id = ?", (1,))
             record = cur.fetchall()
             for row in record:
                 # get encrypted blob
-                encryptedData = row[0]
-                # do decrypt
-                decryptedText = decryptDataToText(encryptedData, userKey)
-                
-                if decryptedText != userPassword:
+                encrypted_data = row[0]
+                # do decrypt and validate
+                decrypted_text = decrypt_data_to_text(encrypted_data, user_key)
+                if decrypted_text != user_password:
                     print ("stored password does not match with provided pass")
                     return False
- 
         else:
             return False
-    except:
-        print("Oops!", sys.exc_info()[0], "occurred.")
+    except Exception as exception:
+        print(str(exception))
         return False
     finally:
         if conn:
             conn.close()
-            
     return True

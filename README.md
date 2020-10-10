@@ -1,4 +1,7 @@
 # maitenotas
+
+## Introduction
+
 Little journal software to help you safely store (with encryption) important and personal text notes.
 
 ## why another journal software?
@@ -15,6 +18,25 @@ So I created one.
 
 ## A screenshot (running in Windows, but can be compiled to run anywhere Python desktop software runs)
 ![screenshot](maitenotas_screeshot.png "Screenshot")
+
+## How to use
+- Just start the main program (maitenotas.py), it will create an encrypted journal if there is not one.
+- Start typing your notes! 
+- All saving is done automatically 
+
+## If you want to build from source
+Use Python 3.6+
+Install dependencies
+```
+pip install requirements_prod.txt
+pip install requirements_dev.txt
+```
+
+After making changes make sure you have valid code against pylint and mypy
+```
+./run-mypy.sh
+./run-pylint.sh
+```
 
 ## Extra notes
 - This application was created during a weekend so do not expect any coding or best practices. It is just a simple personal utility I created for my personal use, but I think it could be useful for others also so here it is.

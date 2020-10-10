@@ -1,330 +1,362 @@
-""" 
+"""
 Application: Maitenotas
 Made by Taksan Tong
 https://github.com/maitelab/maitenotas
 
-Main launcher of the application """
-import wx
-from storage import createDatabase, verifyDatabasePassword, createBook, createJournal, getBookName
-from storage import getJournalText, updateJournalText, updateJournalName, deleteJournal, getTreeLeafs
-
-from crypto import generateUserKey
-
-import os.path
+Main launcher of the application
+"""
 from os import path
 
-wxPythonIdCounter = 1000
-newDatabase = False
-userKey = b''
-selectedJournalId=-1
+import wx
 
-def getNextWxPythonId():
-    global wxPythonIdCounter
-    wxPythonIdCounter = wxPythonIdCounter +1
-    return wxPythonIdCounter
+from storage import update_journal_text, update_journal_name, delete_journal, get_book_name,\
+    get_journal_text, get_tree_leafs, create_book, create_database, verify_database_password,\
+    create_journal
+from crypto import generate_user_key
+import text_labels
+
+class ApplicationData:
+    """Class to hold values needed at the application level"""
+    def __init__(self):
+        self.wx_id_counter = 1000
+        self.new_database = False
+        self.user_key = b''
+        self.selected_journal_id = -1
+
+    def get_next_wx_python_id(self) -> int:
+        """get next wx id for GUI elements"""
+        self.wx_id_counter = self.wx_id_counter +1
+        return self.wx_id_counter
+
+    def get_new_database(self) -> bool:
+        """get flag for new database"""
+        return self.new_database
+
+    def set_new_database(self, new_value: bool) -> None:
+        """set flag for new database"""
+        self.new_database = new_value
+
+    def get_user_key(self) -> bytes:
+        """get user key"""
+        return self.user_key
+
+    def set_user_key(self, new_value: bytes) -> None:
+        """set user key"""
+        self.user_key = new_value
+
+    def get_selected_journal_id(self) -> int:
+        """get selected journal id"""
+        return self.selected_journal_id
+
+    def set_selected_journal_id(self, new_value: int) -> None:
+        """set selected journal id"""
+        self.selected_journal_id = new_value
+
+app_data = ApplicationData()
 
 class MyTree(wx.TreeCtrl):
-    
-    def __init__(self, parent, id, pos, size, style):
-        wx.TreeCtrl.__init__(self, parent, id, pos, size, style)
-        
+    """tree class"""
+    def __init__(self, parent, tid, pos, size, style):
+        wx.TreeCtrl.__init__(self, parent, tid, pos, size, style)
+
 class TreePanel(wx.Panel):
-    
+    """tree panel class"""
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
-        
-        # use global userKey generated during application startup
-        global userKey
-        
+
         # create tree
-        self.tree = MyTree(self, getNextWxPythonId(), wx.DefaultPosition, wx.DefaultSize,
-                           wx.TR_HAS_BUTTONS  | wx.TR_EDIT_LABELS)    
-        
+        self.tree = MyTree(self, app_data.get_next_wx_python_id(), wx.DefaultPosition,
+                           wx.DefaultSize,
+                           wx.TR_HAS_BUTTONS  | wx.TR_EDIT_LABELS)
+
         # get book name, it will become the name of the tree in the user interface
         # for this first version, the bookId is always 2 (because bookId 1 is reserved)
-        rootItem = self.tree.AddRoot(getBookName(userKey,2))
-        leafDict = {}
-        
+        root_item = self.tree.AddRoot(get_book_name(app_data.get_user_key(),2))
+        leaf_dict = {}
+
         # read journal data, each journal entry will become a leaf in the user interface
-        leafList = getTreeLeafs(userKey)
-        for leaf in leafList:
-            parentId = leaf[0]
-            leafId = leaf[1]
-            leafLabel = leaf[2]
-            if parentId == 0:
+        leaf_list = get_tree_leafs(app_data.get_user_key())
+        for leaf in leaf_list:
+            parent_id = leaf[0]
+            leaf_id = leaf[1]
+            leaf_label = leaf[2]
+            if parent_id == 0:
                 # parent is rootItem
-                parentLeaf = rootItem
+                parent_leaf = root_item
             else:
                 # get parent leaf from dictionary
-                parentLeaf = leafDict.get(parentId)
+                parent_leaf = leaf_dict.get(parent_id)
             # add new leaf to tree
-            xItem = self.tree.AppendItem(parentLeaf, leafLabel)
-            self.tree.SetItemData(xItem, leafId)
+            x_item = self.tree.AppendItem(parent_leaf, leaf_label)
+            self.tree.SetItemData(x_item, leaf_id)
             # add new leaf to dictionary
-            leafDict[leafId] = xItem
+            leaf_dict[leaf_id] = x_item
 
         # show tree
-        self.tree.Expand(rootItem)
-        
+        self.tree.Expand(root_item)
+
         sizer = wx.BoxSizer()
         sizer.Add(self.tree, 1, wx.EXPAND)
-        
-        self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.on_EVT_TREE_SEL_CHANGED)
-        self.tree.Bind(wx.EVT_TREE_END_LABEL_EDIT, self.on_EVT_TREE_END_LABEL_EDIT)
-        
-        
-        self.SetSizerAndFit(sizer)
 
-    def setTextControl(self, textControl):
-        self.textControl = textControl
-        
-    def on_EVT_TREE_SEL_CHANGED(self, event):
+        self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.on_evt_tree_sel_changed)
+        self.tree.Bind(wx.EVT_TREE_END_LABEL_EDIT, self.on_evt_tree_end_label_edit)
+        self.SetSizerAndFit(sizer)
+        self.text_control = None
+        self.selected_item = -1
+
+    def set_text_control(self, text_control):
+        """set text control"""
+        self.text_control = text_control
+
+    def on_evt_tree_sel_changed(self, event):
+        """event when a tree selection changes"""
         # before we continue... update the previously selected item
         # save current text before exit application
-        global selectedJournalId
-        global userKey
-        if selectedJournalId>=1:
-            textInScreen = self.textControl.GetValue()
-            updateJournalText(userKey, selectedJournalId, textInScreen)
-        
+        if app_data.get_selected_journal_id()>=1:
+            text_in_screen = self.text_control.GetValue()
+            update_journal_text(app_data.get_user_key(), app_data.get_selected_journal_id(),
+                                text_in_screen)
         # now continue changing the selected item
         item = event.GetItem()
         if item.IsOk():
-            self.selectedItem = item
-            itemData = self.tree.GetItemData(item)
-            if itemData:
-                print (itemData)
+            self.selected_item = item
+            item_data = self.tree.GetItemData(item)
+            if item_data:
+                print (item_data)
                 # get journal text from leaf data (which is also the journal id in the database)
-                journalText = getJournalText(userKey, itemData)
-                self.textControl.SetValue(journalText)
-                
+                journal_text = get_journal_text(app_data.get_user_key(), item_data)
+                self.text_control.SetValue(journal_text)
                 # set global journal id for future reference
-                selectedJournalId = itemData
+                app_data.set_selected_journal_id(item_data)
         event.Skip()
-        
-    def on_EVT_TREE_END_LABEL_EDIT(self, event):
+
+    def on_evt_tree_end_label_edit(self, event):
+        """event when a tree edit occurs"""
         item = event.GetItem()
         if item.IsOk():
-            newLabel = event.GetLabel()
+            new_label = event.GetLabel()
             # print (self.tree.GetItemText(item))
-            print (newLabel)
+            print (new_label)
             # update label in database
-            updateJournalName(userKey, self.tree.GetItemData(item), newLabel)
+            update_journal_name(app_data.get_user_key(), self.tree.GetItemData(item), new_label)
         event.Skip()
-        
-    def addLeaf(self):
-        if self.selectedItem:
-            # print (self.tree.GetItemData(self.selectedItem))
-            
+
+    def add_leaf(self):
+        """add leaf to tree"""
+        if self.selected_item:
             # first add leaf in database because we need the new generated id
             # remember that in this version bookId is always 2
-            parentLeafId = self.tree.GetItemData(self.selectedItem)
-            newLeafId = createJournal(userKey, 2, parentLeafId, "hoja nueva", "")
-            newLeaf = self.tree.AppendItem(self.selectedItem, "hoja nueva")
-            self.tree.SetItemData(newLeaf, newLeafId)
+            parent_leaf_id = self.tree.GetItemData(self.selected_item)
+            new_leaf_id = create_journal(app_data.get_user_key(), 2, parent_leaf_id,
+                                         text_labels.NEW_LEAF, "")
+            new_leaf = self.tree.AppendItem(self.selected_item, text_labels.NEW_LEAF)
+            self.tree.SetItemData(new_leaf, new_leaf_id)
             self.tree.Refresh()
-            
-    def removeLeaf(self):
-        if self.selectedItem:
-            leafId = self.tree.GetItemData(self.selectedItem)
-            self.tree.Delete(self.selectedItem)
+
+    def remove_leaf(self):
+        """remove leaf from tree"""
+        if self.selected_item:
+            leaf_id = self.tree.GetItemData(self.selected_item)
+            self.tree.Delete(self.selected_item)
             # now also delete that leaf in database
-            deleteJournal(leafId)
+            delete_journal(leaf_id)
             self.tree.Refresh()
- 
-    def renameLeaf(self):
-        if self.selectedItem:
-            self.tree.EditLabel(self.selectedItem)
-        
+
+    def rename_leaf(self):
+        """rename leaf"""
+        if self.selected_item:
+            self.tree.EditLabel(self.selected_item)
+
 class MainPanel(wx.Panel):
-
+    """main panel class"""
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
-        
+
 class TextPanel(wx.Panel):
-    
-        
+    """tree panel"""
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
-        
-        self.textControl = wx.TextCtrl(self, -1,
-                              "Bienvenido(a) a Maitenotas. En esta ventana aparecerán las notas de la hoja que elijas del árbol de la izquierda",
-                              style=wx.TE_MULTILINE|wx.TE_PROCESS_ENTER)
-        
-        bsizer = wx.BoxSizer()
-        bsizer.Add(self.textControl, 1, wx.EXPAND)
-        self.SetSizerAndFit(bsizer)
-        
-    def getTextControl(self):
-        return self.textControl
-    
-class MainFrame(wx.Frame):
 
+        self.text_control = wx.TextCtrl(self, -1,
+                              text_labels.WELCOME,
+                              style=wx.TE_MULTILINE|wx.TE_PROCESS_ENTER)
+
+        bsizer = wx.BoxSizer()
+        bsizer.Add(self.text_control, 1, wx.EXPAND)
+        self.SetSizerAndFit(bsizer)
+
+    def get_text_control(self):
+        """get text control"""
+        return self.text_control
+
+class MainFrame(wx.Frame):
+    """main frame"""
     def __init__(self):
         wx.Frame.__init__(self, None, title="Maitenotas")
-
         # ask for user password
-        userPassword = ""
-        global userKey
-        global newDatabase
-        if newDatabase:
+        user_password = ""
+        if app_data.get_new_database():
             # create db and set new password
-            dlgPass1 = wx.TextEntryDialog(self, 'Defina una contraseña a usar','Nuevo diario') 
-            
-            if dlgPass1.ShowModal() == wx.ID_OK: 
-                password1=dlgPass1.GetValue()
-                dlgPass1.Destroy()
-                
+            dlg_pass1 = wx.TextEntryDialog(self, text_labels.DEFINE_PASSWORD,
+                                           text_labels.NEW_DIARY)
+            if dlg_pass1.ShowModal() == wx.ID_OK:
+                password1=dlg_pass1.GetValue()
+                dlg_pass1.Destroy()
+
                 # ask password confirmation
-                dlg = wx.TextEntryDialog(self, 'Confirme contraseña a usar','Nuevo diario')
+                dlg = wx.TextEntryDialog(self, text_labels.CONFIRM_PASSWORD,text_labels.NEW_DIARY)
                 if dlg.ShowModal() == wx.ID_OK:
                     password2=dlg.GetValue()
                     dlg.Destroy()
                     if password1 == password2:
-                        userPassword = password1
+                        user_password = password1
                     else:
-                        wx.MessageBox("Contraseñas no coinciden", "Error" ,wx.OK | wx.ICON_ERROR) 
+                        wx.MessageBox(text_labels.PASSWORDS_DO_NOT_MATCH, "Error" ,
+                                      wx.OK | wx.ICON_ERROR)
                         self.Close()
                 else:
                     dlg.Destroy()
-                    self.Close() 
+                    self.Close()
             else:
-                dlgPass1.Destroy()
-                self.Close() 
-                
+                dlg_pass1.Destroy()
+                self.Close()
+
             # get name of first book
-            dlgFirstBookName = wx.TextEntryDialog(self, 'Defina un nombre para el diario','Nombre inicial') 
-            nameOfFirstBook=""
-            if dlgFirstBookName.ShowModal() == wx.ID_OK: 
-                nameOfFirstBook=dlgFirstBookName.GetValue()
-                dlgFirstBookName.Destroy()
+            dlg_first_book_name = wx.TextEntryDialog(self, text_labels.DIARY_NAME,
+                                                  text_labels.INITIAL_NAME)
+            name_of_first_book=""
+            if dlg_first_book_name.ShowModal() == wx.ID_OK:
+                name_of_first_book=dlg_first_book_name.GetValue()
+                dlg_first_book_name.Destroy()
             else:
-                dlgFirstBookName.Destroy()
-                self.Close() 
-                            
+                dlg_first_book_name.Destroy()
+                self.Close()
+
         else:
             # ask for password for existing database
-            dlgPass = wx.TextEntryDialog(self, 'Ingrese contraseña','Abriendo diario') 
-            
-            if dlgPass.ShowModal() == wx.ID_OK: 
-                userPassword=dlgPass.GetValue()
-                dlgPass.Destroy()
+            dlg_pass = wx.TextEntryDialog(self, text_labels.ENTER_PASSWORD, text_labels.OPENING_DIARY)
+
+            if dlg_pass.ShowModal() == wx.ID_OK:
+                user_password=dlg_pass.GetValue()
+                dlg_pass.Destroy()
             else:
-                dlgPass.Destroy()
+                dlg_pass.Destroy()
                 self.Close()
-                
+
         # verify database connection
-        userKey = generateUserKey(userPassword)
-        if newDatabase:
-            databaseAccess = createDatabase(userKey, userPassword)
-            if databaseAccess == False:
-                wx.MessageBox("Error leyendo datos", "Error" ,wx.OK | wx.ICON_ERROR)
+        app_data.set_user_key(generate_user_key(user_password))
+        if app_data.get_new_database():
+            database_access = create_database(app_data.get_user_key(), user_password)
+            if database_access is False:
+                wx.MessageBox(text_labels.ERROR_READING_DATA, "Error" ,wx.OK | wx.ICON_ERROR)
                 self.Close()
             # create first book
-            bookId = createBook(userKey, nameOfFirstBook)      
+            book_id = create_book(app_data.get_user_key(), name_of_first_book)
             # create example data to start, since the book is new the parentId leaf is ZERO
-            journalName = "hoja 1 de " + nameOfFirstBook
-            journalText = "texto ejemplo de hoja 1 de " + nameOfFirstBook
-            createJournal(userKey, bookId, 0, journalName, journalText)
-            journalName = "hoja 2 de " + nameOfFirstBook
-            journalText = "texto ejemplo de hoja 2 de " + nameOfFirstBook
-            createJournal(userKey, bookId, 0, journalName, journalText)
+            journal_name = text_labels.LEAF_ONE_OF + name_of_first_book
+            journal_text = text_labels.SAMPLE_TEXT_1 + name_of_first_book
+            create_journal(app_data.get_user_key(), book_id, 0, journal_name, journal_text)
+            journal_name = text_labels.LEAF_TWO_OF + name_of_first_book
+            journal_text = text_labels.SAMPLE_TEXT_2 + name_of_first_book
+            create_journal(app_data.get_user_key(), book_id, 0, journal_name, journal_text)
         else:
-            databaseAccess = verifyDatabasePassword(userKey, userPassword)
-            if databaseAccess == False:
-                wx.MessageBox("Contraseña inválida", "Error" ,wx.OK | wx.ICON_ERROR)
-                self.Close() 
-        
+            database_access = verify_database_password(app_data.get_user_key(), user_password)
+            if database_access is False:
+                wx.MessageBox(text_labels.INVALID_PASSWORD, "Error" ,wx.OK | wx.ICON_ERROR)
+                self.Close()
+
         # create GUI Main panel and sub panels
         panel = MainPanel(self)
-        boxSizer = wx.BoxSizer(wx.HORIZONTAL)
-        
-        self.treePanel = TreePanel(panel)
-        boxSizer.Add(self.treePanel, 1, wx.EXPAND | wx.ALL, 1)
+        box_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
-        textPanel = TextPanel(panel)
-        boxSizer.Add(textPanel, 2, wx.EXPAND | wx.ALL, 1)
-        panel.SetSizer(boxSizer)
-        
-        # keep a reference to the text control inside the tree panel 
+        self.tree_panel = TreePanel(panel)
+        box_sizer.Add(self.tree_panel, 1, wx.EXPAND | wx.ALL, 1)
+        text_panel = TextPanel(panel)
+        box_sizer.Add(text_panel, 2, wx.EXPAND | wx.ALL, 1)
+        panel.SetSizer(box_sizer)
+
+        # keep a reference to the text control inside the tree panel
         # and inside the main panel also to access it later
-        self.textControl = textPanel.getTextControl()
-        self.treePanel.setTextControl(self.textControl)  
-        
+        self.text_control = text_panel.get_text_control()
+        self.tree_panel.set_text_control(self.text_control)
+
         # Show main panel
         self.Show()
         self.Maximize(True)
-        
+
         # menus
         menubar = wx.MenuBar()
-        
-        # application menu
-        applicationMenu = wx.Menu()
-        wxPythonIDExit=getNextWxPythonId()
-        wxIdAbout=getNextWxPythonId()
-        
-        menuItemAbout = wx.MenuItem(applicationMenu, wxIdAbout, '&Acerca de')
-        applicationMenu.Append(menuItemAbout)
-        self.Bind(wx.EVT_MENU, self.showAboutScreen, id=wxIdAbout)
-        menuItemExit = wx.MenuItem(applicationMenu, wxPythonIDExit, '&Salir\tCtrl+Q')
-        applicationMenu.Append(menuItemExit)
-        self.Bind(wx.EVT_MENU, self.quitApplication, id=wxPythonIDExit)
-        
-        # tree menu
-        treeMenu = wx.Menu()
-        wxPythonID1=getNextWxPythonId()
-        wxPythonID2=getNextWxPythonId()
-        wxPythonID3=getNextWxPythonId()
-        menuItemAddLeaf = wx.MenuItem(treeMenu, wxPythonID1, '&Agregar hoja\tCtrl+A')
-        menuItemRemoveLeaf = wx.MenuItem(treeMenu, wxPythonID2, '&Remover hoja\tCtrl+D')
-        menuItemRenameLeaf = wx.MenuItem(treeMenu, wxPythonID3, '&Renombrar hoja\tCtrl+R')
-        treeMenu.Append(menuItemAddLeaf)
-        treeMenu.Append(menuItemRemoveLeaf)
-        treeMenu.Append(menuItemRenameLeaf)
-        
-        self.Bind(wx.EVT_MENU, self.addLeaf, id=wxPythonID1)
-        self.Bind(wx.EVT_MENU, self.removeLeaf, id=wxPythonID2)
-        self.Bind(wx.EVT_MENU, self.renameLeaf, id=wxPythonID3)
 
-        menubar.Append(applicationMenu, '&Aplicación')
-        menubar.Append(treeMenu, '&Arbol')
+        # application menu
+        application_menu = wx.Menu()
+        wx_pythonid_exit=app_data.get_next_wx_python_id()
+        wx_id_about=app_data.get_next_wx_python_id()
+
+        menu_item_about = wx.MenuItem(application_menu, wx_id_about, text_labels.TEXT_ABOUT)
+        application_menu.Append(menu_item_about)
+        self.Bind(wx.EVT_MENU, show_about_screen, id=wx_id_about)
+        menu_item_exit = wx.MenuItem(application_menu, wx_pythonid_exit, text_labels.TEXT_QUIT)
+        application_menu.Append(menu_item_exit)
+        self.Bind(wx.EVT_MENU, self.quit_application, id=wx_pythonid_exit)
+
+        # tree menu
+        tree_menu = wx.Menu()
+        wx_python_d1=app_data.get_next_wx_python_id()
+        wx_python_d2=app_data.get_next_wx_python_id()
+        wx_python_d3=app_data.get_next_wx_python_id()
+        menu_item_add_leaf = wx.MenuItem(tree_menu, wx_python_d1, text_labels.TEXT_ADD_LEAF)
+        menu_item_remove_leaf = wx.MenuItem(tree_menu, wx_python_d2, text_labels.TEXT_REMOVE_LEAF)
+        menu_item_rename_leaf = wx.MenuItem(tree_menu, wx_python_d3, text_labels.TEXT_RENAME_LEAF)
+        tree_menu.Append(menu_item_add_leaf)
+        tree_menu.Append(menu_item_remove_leaf)
+        tree_menu.Append(menu_item_rename_leaf)
+
+        self.Bind(wx.EVT_MENU, self.add_leaf, id=wx_python_d1)
+        self.Bind(wx.EVT_MENU, self.remove_leaf, id=wx_python_d2)
+        self.Bind(wx.EVT_MENU, self.rename_leaf, id=wx_python_d3)
+
+        menubar.Append(application_menu, text_labels.TEXT_APPLICATION)
+        menubar.Append(tree_menu, text_labels.TEXT_TREE)
         self.SetMenuBar(menubar)
-        
+
         # window close event
-        self.Bind(wx.EVT_CLOSE, self.closeWindow)
-        
-    def quitApplication(self, e):
+        self.Bind(wx.EVT_CLOSE, self.close_window)
+
+    def quit_application(self, _event):
+        """quit application"""
         self.Close()
-        
-    def closeWindow(self, e):
+
+    def close_window(self, _event):
+        """close window"""
         # save current text before exit application
-        global selectedJournalId
-        global userKey
-        if selectedJournalId>=1:
-            textInScreen = self.textControl.GetValue()
-            updateJournalText(userKey, selectedJournalId, textInScreen)
+        if app_data.get_selected_journal_id()>=1:
+            text_in_screen = self.text_control.GetValue()
+            update_journal_text(app_data.get_user_key(), app_data.get_selected_journal_id(),
+                                text_in_screen)
         print("goodbye!")
         self.Destroy()
-            
-    def addLeaf(self, e):
-        self.treePanel.addLeaf()
 
-    def removeLeaf(self, e):
-        self.treePanel.removeLeaf()
-        
-    def renameLeaf(self, e):
-        self.treePanel.renameLeaf()
-        
-    def showAboutScreen(self, e):
-        wx.MessageBox("Maitenotas versión 1\nProgramada por Taksan Tong\nPara uso libre y personal. Prohibido su venta o uso comercial\nCódigo fuente disponible\ntaksantong@gmail.com", "Acerca de" ,wx.OK | wx.ICON_INFORMATION)
-           
+    def add_leaf(self, _event):
+        """add leaf"""
+        self.tree_panel.add_leaf()
+
+    def remove_leaf(self, _event):
+        """remove leaf"""
+        self.tree_panel.remove_leaf()
+
+    def rename_leaf(self, _event):
+        """rename leaf"""
+        self.tree_panel.rename_leaf()
+
+def show_about_screen(_event):
+    """show about window"""
+    wx.MessageBox(text_labels.MESSAGE_BOX, text_labels.TEXT_ABOUT ,wx.OK | wx.ICON_INFORMATION)
+
 if __name__ == "__main__":
-    """ application main entry point function """
-    
     # check if database exists
-    if path.exists("maitenotas.data") == False:
-        newDatabase = True
-    
+    if path.exists("maitenotas.data") is False:
+        app_data.set_new_database(True)
+
     app = wx.App(False)
     frame = MainFrame()
     app.MainLoop()
