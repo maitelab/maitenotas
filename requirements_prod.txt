@@ -1,2 +1,2 @@
-cryptography==2.9.2
+cryptography==3.2
 wxPython==4.1.0
